@@ -18,7 +18,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-key-secure-123")
 SECURITY_PASSWORD_SALT = 'safe-salt-secure-fax'
 ts = URLSafeTimedSerializer(app.secret_key)
 
-# Database Logic (Auto-switch between SQLite and Neon/Postgres)
+# Database Logic
 db_url = os.environ.get("DATABASE_URL")
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
@@ -51,23 +51,21 @@ class Message(Base):
     recipient_id = Column(Integer, ForeignKey('users.id'))
     recipient = relationship('User', back_populates='messages')
 
-# Create tables if they don't exist
 Base.metadata.create_all(engine)
 
 # ---------------------------------------------------------
 # 3. HELPER FUNCTIONS
 # ---------------------------------------------------------
+
+# FIX FOR GOOGLE SITES EMBEDDING
 @app.after_request
 def allow_iframe(response):
-    # 1. Force remove the blocking header
     response.headers.pop('X-Frame-Options', None)
-    
-    # 2. Allow embedding on ANY site (The "Nuclear" Option)
-    # This solves the issue where Google uses unpredictable subdomains
+    # The "*" allows embedding on ANY site, bypassing Google's strict checks
     response.headers['Content-Security-Policy'] = "frame-ancestors *"
-    
     return response
 
+# DEBUGGING EMAIL SENDER
 def send_email(to_email, subject, body):
     msg = MIMEMultipart()
     msg['Subject'] = subject
@@ -76,18 +74,26 @@ def send_email(to_email, subject, body):
     msg.attach(MIMEText(body, 'plain'))
     
     try:
+        # Check if variables exist
+        user = os.environ.get('SMTP_USERNAME')
+        pwd = os.environ.get('SMTP_PASSWORD')
+        if not user or not pwd:
+            print("❌ ERROR: SMTP credentials missing in Render Environment!")
+            return "Missing Credentials"
+
         server = smtplib.SMTP(os.environ.get('SMTP_SERVER', 'smtp.gmail.com'), 587)
         server.starttls()
-        server.login(os.environ.get('SMTP_USERNAME'), os.environ.get('SMTP_PASSWORD'))
+        server.login(user, pwd)
         server.send_message(msg)
         server.quit()
         return True
     except Exception as e:
-        print(f"Mail Error: {e}")
-        return False
+        # Print the exact error to the Render Logs so we can see it
+        print(f"❌ MAIL ERROR: {str(e)}")
+        return str(e)
 
 # ---------------------------------------------------------
-# 4. UI TEMPLATES (The "Minimalist Grey" Design)
+# 4. UI TEMPLATES
 # ---------------------------------------------------------
 
 BASE_LAYOUT = """
@@ -109,11 +115,9 @@ BASE_LAYOUT = """
             <h1 class="text-white text-xl font-semibold tracking-wide uppercase">Secure Fax Portal</h1>
             <p class="text-gray-400 text-xs mt-1">Encrypted Document Transmission</p>
         </div>
-        
         <div class="p-8">
             {content}
         </div>
-        
         <div class="bg-gray-50 p-4 text-center border-t border-gray-100">
             <p class="text-xs text-gray-400">Powered by GFAX Secure Systems &copy; 2026</p>
         </div>
@@ -135,8 +139,15 @@ def index():
         if user:
             token = ts.dumps(user.email, salt=SECURITY_PASSWORD_SALT)
             link = url_for('login_token', token=token, _external=True)
-            send_email(email, "Secure Login Link", f"Access your secure fax dashboard here: {link}")
-            msg = "<div class='mb-4 p-3 bg-green-50 text-green-700 text-sm rounded border border-green-200'>✅ Login link sent! Check your inbox.</div>"
+            
+            # Try to send email
+            email_status = send_email(email, "Secure Login Link", f"Access your secure fax dashboard here: {link}")
+            
+            if email_status == True:
+                msg = "<div class='mb-4 p-3 bg-green-50 text-green-700 text-sm rounded border border-green-200'>✅ Login link sent! Check your inbox.</div>"
+            else:
+                # SHOW THE ERROR ON SCREEN
+                msg = f"<div class='mb-4 p-3 bg-red-50 text-red-700 text-sm rounded border border-red-200'>❌ Email Failed: {email_status}</div>"
         else:
             msg = "<div class='mb-4 p-3 bg-red-50 text-red-700 text-sm rounded border border-red-200'>❌ Account not found. Please register.</div>"
 
@@ -219,7 +230,6 @@ def dashboard():
     user = db_session.query(User).get(session['user_id'])
     messages = db_session.query(Message).filter_by(recipient_id=user.id).all()
     
-    # Custom Layout for Dashboard (Wider than the base layout)
     msgs_html = ""
     if not messages:
         msgs_html = "<div class='text-center text-gray-400 py-8 italic'>No faxes received yet.</div>"
