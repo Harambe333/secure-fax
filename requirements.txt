@@ -1,0 +1,7 @@
+Flask
+SQLAlchemy
+Flask-SQLAlchemy
+reportlab
+itsdangerous
+gunicorn
+psycopg2-binary
