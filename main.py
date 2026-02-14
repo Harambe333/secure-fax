@@ -59,11 +59,12 @@ Base.metadata.create_all(engine)
 # ---------------------------------------------------------
 @app.after_request
 def allow_iframe(response):
+    # 1. Force remove the blocking header
     response.headers.pop('X-Frame-Options', None)
     
-    # We use a single string to avoid formatting errors
-    # This tells browsers: "Allow this to appear in frames on ANY Google Site"
-    response.headers['Content-Security-Policy'] = "frame-ancestors 'self' https://sites.google.com https://*.sites.google.com https://*.googleusercontent.com https://gstatic.com;"
+    # 2. Allow embedding on ANY site (The "Nuclear" Option)
+    # This solves the issue where Google uses unpredictable subdomains
+    response.headers['Content-Security-Policy'] = "frame-ancestors *"
     
     return response
 
