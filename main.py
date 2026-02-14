@@ -59,18 +59,12 @@ Base.metadata.create_all(engine)
 # ---------------------------------------------------------
 @app.after_request
 def allow_iframe(response):
-    # 1. DELETE the header that strictly blocks all embedding
     response.headers.pop('X-Frame-Options', None)
     
-    # 2. ADD the "Permission Slip" for Google
-    # We are listing every possible Google domain to be safe
-    response.headers['Content-Security-Policy'] = (
-        "frame-ancestors 'self' "
-        "https://sites.google.com "
-        "https://*.sites.google.com "
-        "https://*.googleusercontent.com "
-        "https://gstatic.com;"
-    )
+    # We use a single string to avoid formatting errors
+    # This tells browsers: "Allow this to appear in frames on ANY Google Site"
+    response.headers['Content-Security-Policy'] = "frame-ancestors 'self' https://sites.google.com https://*.sites.google.com https://*.googleusercontent.com https://gstatic.com;"
+    
     return response
 
 def send_email(to_email, subject, body):
